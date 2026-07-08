@@ -182,6 +182,9 @@
   <div class="card">
     <h1 class="display">NEON DRIFT</h1>
     <p>Esplora liberamente una città neon infinita. Inclina il telefono per sterzare, tieni premuto GAS per accelerare. Raccogli sfere d'energia, scopri gli 8 monumenti nascosti e non restare senza carburante.</p>
+    <p style="font-size:12.5px; color:var(--cyan); background:rgba(55,230,255,0.08); border:1px solid rgba(55,230,255,0.25); border-radius:10px; padding:9px 12px; margin:0 0 16px;">
+      📱 Tieni il telefono <b>in orizzontale</b>, come un volante, e resta fermo un istante quando parti: quella posizione diventa il centro dello sterzo. Se l'auto girasse da sola, tocca ↺ per ricentrare.
+    </p>
     <div class="colorPick" id="colorPick"></div>
     <button class="primaryBtn display" id="startBtn">METTI IN MOTO</button>
     <p style="font-size:11px;margin:10px 0 0;">Se il telefono non supporta il movimento, si attiva automaticamente il joystick a schermo.</p>
@@ -304,20 +307,36 @@ window.addEventListener('pointercancel', joyEnd);
 
 /* ---------------- TILT CONTROLS (iPhone motion steering) ---------------- */
 let controlMode='joystick'; // 'joystick' | 'tilt'
-let tiltCentered=false, tiltCenterGamma=0, tiltSteer=0;
-const TILT_RANGE=28; // degrees of tilt from center for full lock
+let tiltCentered=false, tiltCenterRaw=0, tiltSteer=0;
+const TILT_RANGE=32;   // degrees of tilt from center for full lock
+const TILT_DEADZONE=2.5; // degrees of "noise" ignored so the car never drifts on its own
 const gasBtn=document.getElementById('gasBtn');
 const recenterBtn=document.getElementById('recenterBtn');
 let gasHeld=false;
 
+function getOrientationAngle(){
+  if(screen.orientation && typeof screen.orientation.angle==='number') return screen.orientation.angle;
+  if(typeof window.orientation==='number') return window.orientation;
+  return 0;
+}
 function onDeviceOrientation(e){
-  const gamma = e.gamma||0; // left-right tilt, -90..90
-  if(!tiltCentered){ tiltCenterGamma=gamma; tiltCentered=true; }
-  const delta = gamma - tiltCenterGamma;
-  tiltSteer = Math.max(-1, Math.min(1, delta/TILT_RANGE));
+  const angle=getOrientationAngle();
+  // pick the axis that corresponds to "rolling the phone left/right" for the current orientation
+  let raw;
+  if(angle===90) raw=e.beta||0;
+  else if(angle===-90 || angle===270) raw=-(e.beta||0);
+  else raw=e.gamma||0;
+
+  if(!tiltCentered){ tiltCenterRaw=raw; tiltCentered=true; }
+  let delta = raw - tiltCenterRaw;
+  if(Math.abs(delta)<TILT_DEADZONE) delta=0;
+  else delta = delta - Math.sign(delta)*TILT_DEADZONE; // smooth entry past the deadzone
+  const target = Math.max(-1, Math.min(1, delta/TILT_RANGE));
+  tiltSteer = tiltSteer + (target-tiltSteer)*0.28; // low-pass smoothing to kill sensor jitter
 }
 function recenterTilt(){
   tiltCentered=false;
+  tiltSteer=0;
 }
 function activateTiltMode(){
   controlMode='tilt';
@@ -345,7 +364,7 @@ function requestTiltPermission(){
     }
   });
 }
-gasBtn.addEventListener('pointerdown', (e)=>{ e.preventDefault(); gasHeld=true; gasBtn.classList.add('active'); });
+gasBtn.addEventListener('pointerdown', (e)=>{ e.preventDefault(); gasHeld=true; gasBtn.classList.add('active'); gasBtn.setPointerCapture(e.pointerId); });
 gasBtn.addEventListener('pointerup', ()=>{ gasHeld=false; gasBtn.classList.remove('active'); });
 gasBtn.addEventListener('pointercancel', ()=>{ gasHeld=false; gasBtn.classList.remove('active'); });
 gasBtn.addEventListener('pointerleave', ()=>{ gasHeld=false; gasBtn.classList.remove('active'); });
@@ -353,7 +372,7 @@ recenterBtn.addEventListener('pointerdown', (e)=>{ e.preventDefault(); recenterT
 
 let drifting=false;
 const driftBtn=document.getElementById('driftBtn');
-driftBtn.addEventListener('pointerdown', (e)=>{ e.preventDefault(); drifting=true; driftBtn.classList.add('active'); });
+driftBtn.addEventListener('pointerdown', (e)=>{ e.preventDefault(); drifting=true; driftBtn.classList.add('active'); driftBtn.setPointerCapture(e.pointerId); });
 driftBtn.addEventListener('pointerup', ()=>{ drifting=false; driftBtn.classList.remove('active'); });
 driftBtn.addEventListener('pointercancel', ()=>{ drifting=false; driftBtn.classList.remove('active'); });
 driftBtn.addEventListener('pointerleave', ()=>{ drifting=false; driftBtn.classList.remove('active'); });
@@ -785,6 +804,7 @@ async function startGame(){
   if(granted){
     tiltCentered=false;
     activateTiltMode();
+    setTimeout(()=>showToast('CALIBRATO', 'Sterza inclinando il telefono'), 600);
   } else {
     activateJoystickMode();
   }
