@@ -232,30 +232,30 @@ const TRACKS = {
     name:'Circuito Neon',
     theme:'city',
     control: [
-      [0,0],[500,0],[900,40],[1150,180],[1150,420],
-      [950,560],[750,480],[650,560],[650,800],
-      [450,950],[250,950],[150,800],[150,550],
-      [0,420],[-150,480],[-250,350],[-150,200],[-100,80]
+      [0,0],[730,0],[1315,60],[1680,260],[1680,615],
+      [1390,820],[1095,700],[950,820],[950,1170],
+      [660,1390],[365,1390],[220,1170],[220,805],
+      [0,615],[-220,700],[-365,510],[-220,290],[-145,115]
     ]
   },
   lemans: {
     name:'Le Mans',
     theme:'forest',
     control: [
-      [0,0],[700,0],[1400,0],
-      [1750,100],[1850,350],
-      [1850,700],
-      [1700,850],[1550,850],[1500,700],
-      [1500,450],
-      [1300,250],
-      [950,150],
-      [600,250],
-      [350,200],
-      [200,350],
-      [350,500],
-      [150,600],
-      [-100,500],
-      [-150,250]
+      [0,0],[1023,0],[2046,0],
+      [2558,146],[2704,512],
+      [2704,1023],
+      [2485,1242],[2265,1242],[2192,1023],
+      [2192,658],
+      [1900,365],
+      [1388,219],
+      [877,365],
+      [512,292],
+      [292,512],
+      [512,731],
+      [219,877],
+      [-146,731],
+      [-219,365]
     ]
   }
 };
@@ -263,7 +263,7 @@ let selectedTrackKey='neon';
 let builtTrackKey=null;
 
 const TRACK_SAMPLES = 360;
-const TRACK_WIDTH = 130;
+const TRACK_WIDTH = 190;
 const TOTAL_LAPS = 3;
 
 let trackCurve, trackPoints;
@@ -451,13 +451,13 @@ function makeGrassTexture(){
 function makeAsphaltTexture(){
   const c=document.createElement('canvas'); c.width=128; c.height=128;
   const ctx=c.getContext('2d');
-  ctx.fillStyle='#45484f'; ctx.fillRect(0,0,128,128);
-  for(let i=0;i<900;i++){
+  ctx.fillStyle='#4a4d54'; ctx.fillRect(0,0,128,128);
+  for(let i=0;i<420;i++){
     const x=Math.random()*128, y=Math.random()*128;
-    const shade=Math.floor(Math.random()*26-13);
-    const v=Math.max(0,Math.min(255,69+shade));
-    ctx.fillStyle=`rgba(${v},${v+2},${v+5},0.5)`;
-    ctx.fillRect(x,y,1.4,1.4);
+    const shade=Math.floor(Math.random()*16-8);
+    const v=Math.max(0,Math.min(255,74+shade));
+    ctx.fillStyle=`rgba(${v},${v+1},${v+3},0.35)`;
+    ctx.fillRect(x,y,1.2,1.2);
   }
   const tex=new THREE.CanvasTexture(c);
   tex.wrapS=THREE.RepeatWrapping; tex.wrapT=THREE.RepeatWrapping;
@@ -532,33 +532,17 @@ function buildScenery(theme){
 
 function buildTrackMesh(){
   const halfW=TRACK_WIDTH/2;
-  const positions=[];
-  const uvs=[];
-  const leftPts=[], rightPts=[];
-  const uStep=1/8;
+  const roadMat=new THREE.MeshBasicMaterial({map:makeAsphaltTexture()});
   for(let i=0;i<TRACK_SAMPLES;i++){
     const p0=trackPoints[i], p1=trackPoints[(i+1)%TRACK_SAMPLES];
     const tangent=new THREE.Vector3().subVectors(p1,p0).normalize();
-    const right=new THREE.Vector3(-tangent.z,0,tangent.x);
-    const L0=p0.clone().addScaledVector(right, halfW);
-    const R0=p0.clone().addScaledVector(right, -halfW);
-    const L1=p1.clone().addScaledVector(right, halfW);
-    const R1=p1.clone().addScaledVector(right, -halfW);
-    leftPts.push(L0); rightPts.push(R0);
-    positions.push(L0.x,L0.y,L0.z, R0.x,R0.y,R0.z, L1.x,L1.y,L1.z);
-    positions.push(R0.x,R0.y,R0.z, R1.x,R1.y,R1.z, L1.x,L1.y,L1.z);
-    const u0=i*uStep, u1=(i+1)*uStep;
-    uvs.push(u0,1, u0,0, u1,1);
-    uvs.push(u0,0, u1,0, u1,1);
+    const segLen=p1.distanceTo(p0)*1.08;
+    const mid=p0.clone().add(p1).multiplyScalar(0.5);
+    const seg=new THREE.Mesh(new THREE.BoxGeometry(segLen,0.6,TRACK_WIDTH), roadMat);
+    seg.position.set(mid.x,0.3,mid.z);
+    seg.rotation.y=-Math.atan2(tangent.z,tangent.x);
+    trackGroup.add(seg);
   }
-  const geo=new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions,3));
-  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs,2));
-  geo.computeVertexNormals();
-  const mat=new THREE.MeshLambertMaterial({map:makeAsphaltTexture()});
-  const mesh=new THREE.Mesh(geo,mat);
-  mesh.position.y=0.05;
-  trackGroup.add(mesh);
 
   // dashed white centerline
   const dashMat=new THREE.MeshLambertMaterial({color:0xf0f0f0});
@@ -886,8 +870,6 @@ function rebuildTrack(key){
       }
     }
     buildTrackMesh();
-    buildPitBoxes();
-    buildGrandstands();
   }
   builtTrackKey=key;
   const len=trackCurve.getLength();
