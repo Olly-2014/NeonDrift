@@ -230,6 +230,7 @@
 const TRACKS = {
   neon: {
     name:'Circuito Neon',
+    theme:'city',
     control: [
       [0,0],[500,0],[900,40],[1150,180],[1150,420],
       [950,560],[750,480],[650,560],[650,800],
@@ -239,6 +240,7 @@ const TRACKS = {
   },
   lemans: {
     name:'Le Mans',
+    theme:'forest',
     control: [
       [0,0],[700,0],[1400,0],
       [1750,100],[1850,350],
@@ -430,10 +432,110 @@ function showToast(t1,t2){
 /* ---------------- THREE.JS SCENE (static track, built once) ---------------- */
 const aiMeshes=[];
 
+function makeGrassTexture(){
+  const c=document.createElement('canvas'); c.width=256; c.height=256;
+  const ctx=c.getContext('2d');
+  ctx.fillStyle='#4d8a3e'; ctx.fillRect(0,0,256,256);
+  for(let i=0;i<1400;i++){
+    const x=Math.random()*256, y=Math.random()*256;
+    const shade=Math.floor(Math.random()*40-20);
+    const r=Math.max(0,Math.min(255,77+shade)), g=Math.max(0,Math.min(255,138+shade)), b=Math.max(0,Math.min(255,62+shade));
+    ctx.fillStyle=`rgba(${r},${g},${b},0.6)`;
+    ctx.fillRect(x,y,2,2);
+  }
+  const tex=new THREE.CanvasTexture(c);
+  tex.wrapS=THREE.RepeatWrapping; tex.wrapT=THREE.RepeatWrapping;
+  tex.repeat.set(90,90);
+  return tex;
+}
+function makeAsphaltTexture(){
+  const c=document.createElement('canvas'); c.width=128; c.height=128;
+  const ctx=c.getContext('2d');
+  ctx.fillStyle='#45484f'; ctx.fillRect(0,0,128,128);
+  for(let i=0;i<900;i++){
+    const x=Math.random()*128, y=Math.random()*128;
+    const shade=Math.floor(Math.random()*26-13);
+    const v=Math.max(0,Math.min(255,69+shade));
+    ctx.fillStyle=`rgba(${v},${v+2},${v+5},0.5)`;
+    ctx.fillRect(x,y,1.4,1.4);
+  }
+  const tex=new THREE.CanvasTexture(c);
+  tex.wrapS=THREE.RepeatWrapping; tex.wrapT=THREE.RepeatWrapping;
+  return tex;
+}
+
+function makeTree(kind){
+  const group=new THREE.Group();
+  const trunkMat=new THREE.MeshLambertMaterial({color:0x5a4632});
+  const trunk=new THREE.Mesh(new THREE.CylinderGeometry(1.8,2.4,13,6), trunkMat);
+  trunk.position.y=6.5;
+  group.add(trunk);
+  const foliageColors=kind==='pine'? [0x2f5c3a,0x356540,0x2a4f34] : [0x4f8a4a,0x5a9654,0x467d42];
+  const fmat=new THREE.MeshLambertMaterial({color:foliageColors[Math.floor(Math.random()*foliageColors.length)]});
+  if(kind==='pine'){
+    for(let t=0;t<3;t++){
+      const cone=new THREE.Mesh(new THREE.ConeGeometry(7-t*1.6,9,7), fmat);
+      cone.position.y=13+t*6.5;
+      group.add(cone);
+    }
+  } else {
+    const ball=new THREE.Mesh(new THREE.SphereGeometry(8,8,7), fmat);
+    ball.position.y=17;
+    group.add(ball);
+  }
+  const s=0.8+Math.random()*0.5;
+  group.scale.set(s,s,s);
+  return group;
+}
+function makeBuildingBlock(){
+  const palette=[0x3a4050,0x454b5c,0x333a48,0x4a5262];
+  const h=70+Math.random()*170;
+  const w=32+Math.random()*26;
+  const mat=new THREE.MeshLambertMaterial({color:palette[Math.floor(Math.random()*palette.length)]});
+  const mesh=new THREE.Mesh(new THREE.BoxGeometry(w,h,w), mat);
+  mesh.position.y=h/2;
+  return mesh;
+}
+function buildScenery(theme){
+  const halfW=TRACK_WIDTH/2;
+  const isForest = theme==='forest';
+  const step = isForest? 5 : 9;
+  for(let i=0;i<TRACK_SAMPLES;i+=step){
+    if(i<22) continue; // keep start/pit area clear
+    const p0=trackPoints[i], p1=trackPoints[(i+1)%TRACK_SAMPLES];
+    const tangent=new THREE.Vector3().subVectors(p1,p0).normalize();
+    const right=new THREE.Vector3(-tangent.z,0,tangent.x);
+    [1,-1].forEach(side=>{
+      if(Math.random()<(isForest?0.9:0.5)) return;
+      const dist = halfW + 150 + Math.random()*160;
+      const jitter = (Math.random()-0.5)*40;
+      const pos=p0.clone().addScaledVector(right, side*dist).addScaledVector(tangent, jitter);
+      if(isForest){
+        const tree=makeTree(Math.random()<0.6?'pine':'round');
+        tree.position.set(pos.x,0,pos.z);
+        tree.rotation.y=Math.random()*Math.PI*2;
+        trackGroup.add(tree);
+      } else {
+        if(Math.random()<0.4){
+          const building=makeBuildingBlock();
+          building.position.set(pos.x + side*120,0,pos.z);
+          trackGroup.add(building);
+        } else {
+          const tree=makeTree('round');
+          tree.position.set(pos.x,0,pos.z);
+          trackGroup.add(tree);
+        }
+      }
+    });
+  }
+}
+
 function buildTrackMesh(){
   const halfW=TRACK_WIDTH/2;
   const positions=[];
+  const uvs=[];
   const leftPts=[], rightPts=[];
+  const uStep=1/8;
   for(let i=0;i<TRACK_SAMPLES;i++){
     const p0=trackPoints[i], p1=trackPoints[(i+1)%TRACK_SAMPLES];
     const tangent=new THREE.Vector3().subVectors(p1,p0).normalize();
@@ -445,14 +547,30 @@ function buildTrackMesh(){
     leftPts.push(L0); rightPts.push(R0);
     positions.push(L0.x,L0.y,L0.z, R0.x,R0.y,R0.z, L1.x,L1.y,L1.z);
     positions.push(R0.x,R0.y,R0.z, R1.x,R1.y,R1.z, L1.x,L1.y,L1.z);
+    const u0=i*uStep, u1=(i+1)*uStep;
+    uvs.push(u0,1, u0,0, u1,1);
+    uvs.push(u0,0, u1,0, u1,1);
   }
   const geo=new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(positions,3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs,2));
   geo.computeVertexNormals();
-  const mat=new THREE.MeshLambertMaterial({color:0x45484f});
+  const mat=new THREE.MeshLambertMaterial({map:makeAsphaltTexture()});
   const mesh=new THREE.Mesh(geo,mat);
   mesh.position.y=0.05;
   trackGroup.add(mesh);
+
+  // dashed white centerline
+  const dashMat=new THREE.MeshLambertMaterial({color:0xf0f0f0});
+  for(let i=0;i<TRACK_SAMPLES;i+=8){
+    const p0=trackPoints[i], p1=trackPoints[(i+1)%TRACK_SAMPLES];
+    const tangent=new THREE.Vector3().subVectors(p1,p0).normalize();
+    const segLen=p1.distanceTo(p0)*0.6;
+    const dash=new THREE.Mesh(new THREE.BoxGeometry(segLen,1,3), dashMat);
+    dash.position.set(p0.x,0.4,p0.z);
+    dash.rotation.y=-Math.atan2(tangent.z,tangent.x);
+    trackGroup.add(dash);
+  }
 
   // red/white curb stripes (arcade sport look) along both edges
   for(let i=0;i<TRACK_SAMPLES;i+=6){
@@ -504,6 +622,7 @@ function buildTrackMesh(){
 
   buildPitBoxes();
   buildGrandstands();
+  buildScenery(TRACKS[selectedTrackKey].theme);
 }
 
 function buildPitBoxes(){
@@ -672,8 +791,31 @@ function makeCarMesh(color){
   const lightMat=new THREE.MeshStandardMaterial({color:0xffffff, emissive:0xffffff, emissiveIntensity:1.2});
   [[35,5,-5],[35,5,5]].forEach(p=>{ const l=new THREE.Mesh(lightGeo,lightMat); l.position.set(p[0],p[1],p[2]); group.add(l); });
 
+  // soft ground shadow blob
+  const shadow=new THREE.Mesh(new THREE.CircleGeometry(28,16), new THREE.MeshBasicMaterial({color:0x000000, transparent:true, opacity:0.28}));
+  shadow.rotation.x=-Math.PI/2;
+  shadow.position.y=0.3;
+  group.add(shadow);
+
   group.userData.bodyMaterials=[bodyMat];
   return group;
+}
+
+function buildClouds(){
+  const cloudMat=new THREE.MeshLambertMaterial({color:0xffffff, transparent:true, opacity:0.9});
+  for(let i=0;i<16;i++){
+    const group=new THREE.Group();
+    const puffs=3+Math.floor(Math.random()*3);
+    for(let p=0;p<puffs;p++){
+      const s=40+Math.random()*35;
+      const puff=new THREE.Mesh(new THREE.SphereGeometry(s,8,6), cloudMat);
+      puff.position.set((Math.random()-0.5)*80,(Math.random()-0.5)*16,(Math.random()-0.5)*50);
+      group.add(puff);
+    }
+    const angle=Math.random()*Math.PI*2, radius=900+Math.random()*2200;
+    group.position.set(Math.cos(angle)*radius, 480+Math.random()*260, Math.sin(angle)*radius);
+    scene.add(group);
+  }
 }
 
 function initThree(){
@@ -693,11 +835,14 @@ function initThree(){
   scene.add(sun);
   scene.add(new THREE.AmbientLight(0xffffff, 0.35));
 
-  // ground (grass)
+  // ground (grass, textured)
   const groundGeo=new THREE.PlaneGeometry(6000,6000);
-  const ground=new THREE.Mesh(groundGeo, new THREE.MeshLambertMaterial({color:0x4d8a3e}));
+  const grassTex=makeGrassTexture();
+  const ground=new THREE.Mesh(groundGeo, new THREE.MeshLambertMaterial({map:grassTex}));
   ground.rotation.x=-Math.PI/2;
   scene.add(ground);
+
+  buildClouds();
 
   trackGroup=new THREE.Group();
   scene.add(trackGroup);
